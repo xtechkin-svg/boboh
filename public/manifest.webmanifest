@@ -1,0 +1,21 @@
+{
+  "name": "Boboh Vibe",
+  "short_name": "Boboh",
+  "description": "Share your vibe. Build your fam. Premium social network with live streaming, M-Pesa wallets, gifting, and more.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0a0a0d",
+  "theme_color": "#0a0a0d",
+  "icons": [
+    {
+      "src": "/xtech-favicon.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/xtech-favicon.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}

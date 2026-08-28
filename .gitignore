@@ -1,0 +1,12 @@
+node_modules/
+.next/
+db/
+*.db
+*.db-journal
+.env
+.env.local
+.env.production
+uploads/
+*.log
+.DS_Store
+.next/standalone/

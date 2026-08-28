@@ -1,0 +1,460 @@
+// VibeFam — Instagram/TikTok-style social network schema (v3)
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String   @id @default(cuid())
+  username     String   @unique
+  email        String?  @unique
+  passwordHash String?
+  phone        String?  @unique
+  displayName  String
+  bio          String   @default("")
+  avatarUrl    String   @default("")
+  coverUrl     String   @default("")  // cover photo for profile
+  verified     Boolean  @default(false)
+  verifiedType String   @default("") // blue | red | green | black | "" (none)
+  isAdmin      Boolean  @default(false)
+  isPrivate    Boolean  @default(false)
+  isOfficialAI Boolean  @default(false) // for VibeFam AI account
+  whatsappNumber String @default("")  // support WhatsApp number on profile
+  lastSeen      DateTime? // last time user was active (for "last seen" status)
+  dateOfBirth   DateTime? // user's date of birth (required for profile setup)
+  gender        String   @default("") // "male" | "female" | ""
+  profileSetupCompleted Boolean @default(true) // false for newly created accounts until they complete the Facebook-style setup
+  displayNameChangedAt  DateTime? // last time display name was changed (for 2-per-60-days limit)
+  displayNameChangeCount Int @default(0) // number of display name changes in the current 60-day window
+  passwordResetToken     String? // token for forgot-password flow
+  passwordResetExpires   DateTime? // when the forgot-password token expires
+  securityCode           String? // 6-digit code for account-security verification
+  securityCodeExpires    DateTime? // when the security code expires
+
+  // Ban system
+  banned             Boolean  @default(false)
+  bannedReason       String   @default("")
+  bannedPermanently  Boolean  @default(false)
+  bannedUntil        DateTime?
+  bannedAt           DateTime?
+
+  createdAt    DateTime @default(now())
+
+  posts        Post[]
+  comments     Comment[]
+  storyComments StoryComment[]
+  likes        Like[]
+  bookmarks    Bookmark[]
+  stories      Story[]
+  sentFollows  Follow[] @relation("Follower")
+  gotFollows   Follow[] @relation("Following")
+  sessions     Session[]
+  notifications Notification[] @relation("ToUser")
+  notifFrom    Notification[] @relation("FromUser")
+
+  conversations1 Conversation[] @relation("User1")
+  conversations2 Conversation[] @relation("User2")
+  messages       Message[]
+  aiChats        AiChat[]
+
+  wallet        Wallet?
+  giftsSent     Gift[]    @relation("GiftFrom")
+  giftsReceived Gift[]    @relation("GiftTo")
+
+  // Live
+  liveStreams   LiveStream[]
+  liveViewers   LiveViewer[]
+  liveGiftsSent LiveGift[] @relation("LiveGiftFrom")
+  liveGiftsReceived LiveGift[] @relation("LiveGiftTo")
+
+  // Calls
+  callsInitiated Call[] @relation("CallFrom")
+  callsReceived  Call[] @relation("CallTo")
+
+  // Groups
+  groupsCreated  ChatGroup[] @relation("GroupCreator")
+  groupMemberships GroupMember[]
+  groupMessages  GroupMessage[]
+
+  // Ban appeals submitted by this user
+  banAppeals BanAppeal[]
+}
+
+// === Ban Appeals ===
+model BanAppeal {
+  id          String   @id @default(cuid())
+  userId      String
+  reason      String   // user's appeal text
+  status      String   @default("pending") // pending | approved | rejected
+  adminNotes  String   @default("")
+  createdAt   DateTime @default(now())
+  resolvedAt  DateTime?
+
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([status])
+}
+
+// === Groups (WhatsApp-style) ===
+model ChatGroup {
+  id              String   @id @default(cuid())
+  name            String
+  description     String   @default("")
+  inviteCode      String   @unique
+  createdBy       String
+  onlyAdminsCanChat Boolean @default(false)
+  isHallOfFame     Boolean  @default(false)
+  createdAt       DateTime @default(now())
+
+  creator     User     @relation("GroupCreator", fields: [createdBy], references: [id], onDelete: Cascade)
+  members     GroupMember[]
+  messages    GroupMessage[]
+
+  @@index([createdBy])
+}
+
+model GroupMember {
+  id          String   @id @default(cuid())
+  groupId     String
+  userId      String
+  isAdmin     Boolean  @default(false)
+  joinedAt    DateTime @default(now())
+
+  group       ChatGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([groupId, userId])
+  @@index([groupId])
+  @@index([userId])
+}
+
+model GroupMessage {
+  id          String   @id @default(cuid())
+  groupId     String
+  senderId    String
+  text        String
+  replyToId   String?
+  createdAt   DateTime @default(now())
+
+  group       ChatGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  sender      User     @relation(fields: [senderId], references: [id], onDelete: Cascade)
+  replyTo     GroupMessage? @relation("GroupReplyTo", fields: [replyToId], references: [id], onDelete: NoAction)
+  replies     GroupMessage[] @relation("GroupReplyTo")
+
+  @@index([groupId])
+}
+
+model Post {
+  id          String   @id @default(cuid())
+  authorId    String
+  imageUrl    String   @default("")  // optional now (text-only posts have no image)
+  videoUrl    String   @default("")  // video URL for video posts
+  caption     String   @default("")
+  location    String   @default("")
+  filter      String   @default("none")
+  viewCount   Int      @default(0)
+  createdAt   DateTime @default(now())
+
+  author      User     @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  comments    Comment[]
+  likes       Like[]
+  bookmarks   Bookmark[]
+
+  @@index([authorId])
+  @@index([createdAt])
+}
+
+model Comment {
+  id        String   @id @default(cuid())
+  postId    String
+  authorId  String
+  text      String
+  createdAt DateTime @default(now())
+
+  post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+  author    User     @relation(fields: [authorId], references: [id], onDelete: Cascade)
+
+  @@index([postId])
+}
+
+model Like {
+  id        String   @id @default(cuid())
+  postId    String
+  userId    String
+  createdAt DateTime @default(now())
+
+  post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([postId, userId])
+  @@index([postId])
+}
+
+model Bookmark {
+  id        String   @id @default(cuid())
+  postId    String
+  userId    String
+  createdAt DateTime @default(now())
+
+  post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([postId, userId])
+  @@index([userId])
+}
+
+model Follow {
+  id          String   @id @default(cuid())
+  followerId  String
+  followingId String
+  createdAt   DateTime @default(now())
+
+  follower    User     @relation("Follower", fields: [followerId], references: [id], onDelete: Cascade)
+  following   User     @relation("Following", fields: [followingId], references: [id], onDelete: Cascade)
+
+  @@unique([followerId, followingId])
+  @@index([followingId])
+}
+
+model Story {
+  id        String   @id @default(cuid())
+  authorId  String
+  imageUrl  String
+  caption   String   @default("")
+  filter    String   @default("none")
+  musicTitle    String   @default("")
+  musicArtist   String   @default("")
+  musicPreviewUrl String @default("")
+  musicArtworkUrl String @default("")
+  createdAt DateTime @default(now())
+  expiresAt DateTime
+
+  author    User           @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  comments  StoryComment[]
+
+  @@index([authorId])
+}
+
+model StoryComment {
+  id        String   @id @default(cuid())
+  storyId   String
+  authorId  String
+  text      String
+  createdAt DateTime @default(now())
+
+  story     Story    @relation(fields: [storyId], references: [id], onDelete: Cascade)
+  author    User     @relation(fields: [authorId], references: [id], onDelete: Cascade)
+
+  @@index([storyId])
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  userId    String
+  token     String   @unique
+  createdAt DateTime @default(now())
+  expiresAt DateTime
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model Notification {
+  id        String   @id @default(cuid())
+  toUserId  String
+  fromUserId String
+  type      String   // like | comment | follow | message | gift | call | live_gift | story_comment
+  postId    String?
+  text      String
+  read      Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  toUser    User     @relation("ToUser", fields: [toUserId], references: [id], onDelete: Cascade)
+  fromUser  User     @relation("FromUser", fields: [fromUserId], references: [id], onDelete: Cascade)
+
+  @@index([toUserId])
+}
+
+// === DMs ===
+model Conversation {
+  id        String   @id @default(cuid())
+  user1Id   String
+  user2Id   String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user1     User     @relation("User1", fields: [user1Id], references: [id], onDelete: Cascade)
+  user2     User     @relation("User2", fields: [user2Id], references: [id], onDelete: Cascade)
+  messages  Message[]
+
+  @@unique([user1Id, user2Id])
+  @@index([user2Id])
+}
+
+model Message {
+  id              String   @id @default(cuid())
+  conversationId  String
+  senderId        String
+  text            String
+  replyToId       String?
+  audioUrl        String   @default("")
+  imageUrl        String   @default("")  // photo message (DM)
+  viewOnce        Boolean  @default(false) // view-once photo: disappears after being viewed
+  viewed          Boolean  @default(false) // whether the view-once photo has been viewed
+  read            Boolean  @default(false)
+  createdAt       DateTime @default(now())
+
+  conversation    Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  sender          User     @relation(fields: [senderId], references: [id], onDelete: Cascade)
+  replyTo         Message? @relation("ReplyTo", fields: [replyToId], references: [id], onDelete: NoAction)
+  replies         Message[] @relation("ReplyTo")
+
+  @@index([conversationId])
+  @@index([senderId])
+}
+
+// === VibeFam AI Chat ===
+model AiChat {
+  id        String   @id @default(cuid())
+  userId    String
+  role      String   // user | assistant
+  text      String
+  createdAt DateTime @default(now())
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+// === Wallet & Gifting (M-Pesa via Swiftwallet) ===
+model Wallet {
+  id        String   @id @default(cuid())
+  userId    String   @unique
+  balance   Int      @default(0)   // KES cents
+  liveBalance Int    @default(0)   // separate live earnings wallet (KES cents)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  transactions Transaction[]
+
+  @@index([userId])
+}
+
+model Transaction {
+  id        String   @id @default(cuid())
+  walletId  String
+  type      String   // topup | gift_sent | gift_received | withdraw | live_gift_sent | live_gift_received | live_withdraw
+  amount    Int      // KES cents (positive for credit, negative for debit)
+  reference String   @default("")
+  status    String   @default("completed")  // pending | completed | failed
+  checkoutRequestId String @default("")  // Swiftwallet checkout request ID for STK tracking
+  createdAt DateTime @default(now())
+
+  wallet    Wallet   @relation(fields: [walletId], references: [id], onDelete: Cascade)
+
+  @@index([walletId])
+}
+
+model Gift {
+  id        String   @id @default(cuid())
+  fromUserId String
+  toUserId   String
+  amount     Int
+  message    String   @default("")
+  sticker    String   @default("🎁")
+  createdAt  DateTime @default(now())
+
+  fromUser   User     @relation("GiftFrom", fields: [fromUserId], references: [id], onDelete: Cascade)
+  toUser     User     @relation("GiftTo", fields: [toUserId], references: [id], onDelete: Cascade)
+
+  @@index([toUserId])
+  @@index([fromUserId])
+}
+
+// === Live Streaming (TikTok-style) ===
+model LiveStream {
+  id          String   @id @default(cuid())
+  hostId      String
+  title       String   @default("")
+  isLive      Boolean  @default(true)
+  viewerCount Int      @default(0)
+  likeCount   Int      @default(0)  // tap-tap likes
+  startedAt   DateTime @default(now())
+  endedAt     DateTime?
+
+  host        User         @relation(fields: [hostId], references: [id], onDelete: Cascade)
+  viewers     LiveViewer[]
+  gifts       LiveGift[]
+
+  @@index([hostId])
+  @@index([isLive])
+}
+
+model LiveViewer {
+  id          String   @id @default(cuid())
+  streamId    String
+  userId      String
+  joinedAt    DateTime @default(now())
+
+  stream      LiveStream @relation(fields: [streamId], references: [id], onDelete: Cascade)
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([streamId, userId])
+  @@index([streamId])
+}
+
+model LiveGift {
+  id          String   @id @default(cuid())
+  streamId    String
+  fromUserId  String
+  toUserId    String   // host
+  amount      Int      // KES cents
+  sticker     String   @default("🎁")
+  createdAt   DateTime @default(now())
+
+  stream      LiveStream @relation(fields: [streamId], references: [id], onDelete: Cascade)
+  fromUser    User     @relation("LiveGiftFrom", fields: [fromUserId], references: [id], onDelete: Cascade)
+  toUser      User     @relation("LiveGiftTo", fields: [toUserId], references: [id], onDelete: Cascade)
+
+  @@index([streamId])
+  @@index([toUserId])
+}
+
+// === Calls (voice/video) ===
+model Call {
+  id          String   @id @default(cuid())
+  fromUserId  String
+  toUserId    String
+  type        String   // voice | video
+  status      String   @default("ringing")  // ringing | answered | missed | ended
+  sdpOffer    String?  // WebRTC SDP offer from caller
+  sdpAnswer   String?  // WebRTC SDP answer from recipient
+  startedAt   DateTime @default(now())
+  endedAt     DateTime?
+
+  fromUser    User     @relation("CallFrom", fields: [fromUserId], references: [id], onDelete: Cascade)
+  toUser      User     @relation("CallTo", fields: [toUserId], references: [id], onDelete: Cascade)
+
+  @@index([toUserId])
+  @@index([fromUserId])
+}
+
+// === Email Verification Codes ===
+// Stores 6-digit OTP codes for email verification during signup.
+// Code expires 10 minutes after creation.
+model VerificationCode {
+  id        String   @id @default(cuid())
+  email     String
+  code      String
+  expires   String   // epoch millis as string (kept as string for SQLite compatibility)
+  createdAt DateTime @default(now())
+
+  @@index([email])
+}
